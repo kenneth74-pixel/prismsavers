@@ -1,0 +1,354 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+description = 'Fineract Provider'
+
+apply plugin: 'org.zeroturnaround.gradle.jrebel'
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'org.springframework.boot'
+apply plugin: 'com.gorylenko.gradle-git-properties'
+apply plugin: 'io.swagger.core.v3.swagger-gradle-plugin'
+apply plugin: 'com.google.cloud.tools.jib'
+
+repositories {
+    mavenCentral()
+    maven {
+        url "https://repo.orl.eng.hitachivantara.com/artifactory/pnt-mvn/"
+    }
+}
+
+// Custom OpenJPA enhancement
+compileJava.doLast {
+    def enhanceIncludes = [
+        '**/AbstractPersistableCustom.class',
+        '**/domain/*.class'
+    ]
+
+    def classesToEnhance = project.sourceSets.main.output.classesDirs.collectMany { classesDir ->
+        project.fileTree(classesDir).matching {
+            enhanceIncludes.forEach { include it }
+        }.files
+    }
+
+    String persistenceXml = "META-INF/persistence.xml"
+    def persistenceXmlFile
+
+    // Check if persistence.xml is in the resource dirs.
+    project.sourceSets.main.resources.srcDirs.collect { resourceDir ->
+        def persistenceXmlFileCandidate = project.fileTree(resourceDir).matching {
+            include persistenceXml
+        }
+
+        if (!persistenceXmlFileCandidate.isEmpty()) {
+            if (persistenceXmlFile == null) {
+                persistenceXmlFile = persistenceXmlFileCandidate.singleFile
+            } else {
+                throw new InvalidUserDataException("Multiple persistence.xml files found in path: " +
+                persistenceXmlFile + ", " + persistenceXmlFileCandidate)
+            }
+        }
+
+        // Nothing found. Fallback to plain file.
+        if (persistenceXmlFile == null) {
+            persistenceXmlFile = project.file(persistenceXml)
+            if (!persistenceXmlFile.exists()) {
+                throw new InvalidUserDataException(
+                "Could not find valid persistence.xml in path " + this.persistenceXml)
+            }
+        }
+    }
+
+    org.apache.openjpa.lib.util.Options options = new org.apache.openjpa.lib.util.Options([
+        "addDefaultConstructor"      : true,
+        "enforcePropertyRestrictions": true,
+        "tmpClassLoader"             : false,
+        "propertiesFile"             : persistenceXmlFile
+    ])
+
+    def classes = project.sourceSets.main.output.classesDirs.collect { it.toURI().toURL() }
+
+    def compileJars = project.configurations.compileClasspath.files.collect { jar ->
+        jar.toURI().toURL()
+    }
+
+    def resources = project.sourceSets.main.resources.srcDirs.collect { resource ->
+        resource.toURI().toURL()
+    }
+
+    def urls = (classes + compileJars + resources)
+
+    ClassLoader currentClassLoader = Thread.currentThread().getContextClassLoader();
+    Thread.currentThread().setContextClassLoader(new URLClassLoader((URL[])urls, currentClassLoader));
+    org.apache.openjpa.enhance.PCEnhancer.run((String []) classesToEnhance, options);
+    Thread.currentThread().setContextClassLoader(currentClassLoader);
+}
+
+// Configuration for Swagger documentation generation task
+// https://github.com/swagger-api/swagger-core/tree/master/modules/swagger-gradle-plugin
+import org.apache.tools.ant.filters.ReplaceTokens
+
+task prepareInputYaml {
+    outputs.file('config/swagger/fineract-input.yaml')
+
+    doLast {
+        copy {
+            from file('config/swagger/fineract-input.yaml.template')
+            into file('config/swagger')
+            rename { String filename -> return 'fineract-input.yaml' }
+            filter(ReplaceTokens, tokens: [VERSION: "${project.version}".toString()])
+        }
+    }
+}
+
+rat.dependsOn prepareInputYaml
+
+resolve {
+    logging.captureStandardOutput LogLevel.INFO
+    outputFileName = 'fineract'
+    outputFormat = 'YAML'
+    prettyPrint = 'TRUE'
+    classpath = sourceSets.main.runtimeClasspath
+    outputDir = file("${buildDir}/generated/swagger-ui")
+    openApiFile = file("config/swagger/fineract-input.yaml")
+}
+
+resolve.dependsOn prepareInputYaml
+
+configurations {
+    providedRuntime // needed for Spring Boot executable WAR
+    providedCompile
+    compile() {
+        exclude module: 'hibernate-entitymanager'
+        exclude module: 'hibernate-validator'
+        exclude module: 'activation'
+        exclude module: 'bcmail-jdk14'
+        exclude module: 'bcprov-jdk14'
+        exclude module: 'bctsp-jdk14'
+        exclude module: 'c3p0'
+        exclude module: 'stax-api'
+        exclude module: 'jaxb-api'
+        exclude module: 'jaxb-impl'
+        exclude module: 'jboss-logging'
+        exclude module: 'itext-rtf'
+        exclude module: 'classworlds'
+    }
+    runtime
+}
+
+apply from: 'dependencies.gradle'
+
+// Configuration for the modernizer plugin
+// https://github.com/andygoossens/gradle-modernizer-plugin
+modernizer {
+    ignoreClassNamePatterns = [
+        '.*AbstractPersistableCustom',
+        '.*EntityTables'
+    ]
+}
+
+compileJava {
+    dependsOn rat
+    finalizedBy resolve
+}
+
+// If we are running Gradle within Eclipse to enhance classes with OpenJPA,
+// set the classes directory to point to Eclipse's default build directory
+if (project.hasProperty('env') && project.getProperty('env') == 'eclipse')
+{
+    sourceSets.main.java.outputDir = new File(rootProject.projectDir, "fineract-provider/bin/main")
+}
+
+eclipse
+{
+    project {
+        buildCommand([ LaunchConfigHandle: "<project>/.externalToolBuilders/OpenJPA Enhance Builder.launch" ],  'org.eclipse.ui.externaltools.ExternalToolBuilder')
+    }
+}
+
+/* http://stackoverflow.com/questions/19653311/jpa-repository-works-in-idea-and-production-but-not-in-gradle */
+sourceSets.main.output.resourcesDir = sourceSets.main.java.outputDir
+sourceSets.test.output.resourcesDir = sourceSets.test.java.outputDir
+
+if (!(project.hasProperty('env') && project.getProperty('env') == 'dev')) {
+    sourceSets {
+        test {
+            java {
+                exclude '**/core/boot/tests/**'
+            }
+        }
+    }
+}
+
+// Configuration for SQL tasks
+// https://docs.groovy-lang.org/latest/html/api/groovy/sql/Sql.html
+import groovy.sql.Sql
+
+project.ext.mysqlUser='root'
+project.ext.mysqlPassword='mysql'
+
+configurations {
+    driver
+}
+dependencies {
+    driver 'org.mariadb.jdbc:mariadb-java-client:2.7.4'
+}
+
+URLClassLoader loader = GroovyObject.class.classLoader
+configurations.driver.each {File file ->
+    loader.addURL(file.toURL())
+}
+
+task createDB {
+    description= "Creates the Database. Needs database name to be passed (like: -PdbName=someDBname)"
+    doLast {
+        def sql = Sql.newInstance( 'jdbc:mariadb://localhost:3306/', mysqlUser, mysqlPassword, 'org.mariadb.jdbc.Driver' )
+        sql.execute( 'create database '+"`$dbName`" )
+    }
+}
+
+task dropDB {
+    description= "Drops the specified database. The database name has to be passed (like: -PdbName=someDBname)"
+    doLast {
+        def sql = Sql.newInstance( 'jdbc:mariadb://localhost:3306/', mysqlUser, mysqlPassword, 'org.mariadb.jdbc.Driver' )
+        sql.execute( 'DROP DATABASE '+"`$dbName`")
+    }
+}
+task setBlankPassword {
+    doLast {
+        def sql = Sql.newInstance( 'jdbc:mariadb://localhost:3306/', mysqlUser, mysqlPassword, 'org.mariadb.jdbc.Driver' )
+        sql.execute('USE `fineract_tenants`')
+        sql.execute('UPDATE fineract_tenants.tenants SET schema_server = \'localhost\', schema_server_port = \'3306\', schema_username = \'mifos\', schema_password = \'mysql\' WHERE id=1;')
+    }
+}
+
+bootRun {
+    jvmArgs = [
+        "-Dspring.output.ansi.enabled=ALWAYS"
+    ]
+
+    dependencies {
+        implementation 'org.mariadb.jdbc:mariadb-java-client:2.7.4'
+    }
+
+    classpath += files("build/generated/swagger-ui")
+}
+
+springBoot {
+    mainClass = 'org.apache.fineract.ServerApplication'
+}
+
+bootJar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes 'Main-Class': 'org.springframework.boot.loader.PropertiesLauncher', 'Implementation-Title':   'Apache Fineract', 'Implementation-Version': archiveVersion
+    }
+    dependsOn resolve
+    classifier = ''
+
+    from('build/generated/swagger-ui') {
+        into 'BOOT-INF/classes/static/swagger-ui'
+    }
+}
+
+jar {
+    from('build/generated/swagger-ui') {
+        include '*'
+    }
+}
+
+jar.dependsOn resolve
+jar.dependsOn bootJar
+
+jib {
+    from {
+        image = 'azul/zulu-openjdk-alpine:17'
+    }
+
+    to {
+        image = 'fineract'
+        tags = [
+            "${version}",
+            'latest'
+        ]
+    }
+
+    container {
+        creationTime = 'USE_CURRENT_TIMESTAMP'
+        mainClass = 'org.apache.fineract.ServerApplication'
+        extraClasspath = ['/app/plugins/*']
+        args = [
+            '-Duser.home=/tmp',
+            '-Dfile.encoding=UTF-8',
+            '-Duser.timezone=UTC',
+            '-Djava.security.egd=file:/dev/./urandom'
+        ]
+        ports = ['8080/tcp', '8443/tcp']
+        labels = [maintainer: 'Aleksandar Vidakovic <aleks@apache.org>']
+        user = 'nobody:nogroup'
+    }
+
+    allowInsecureRegistries = true
+
+    dependencies {
+        implementation 'org.mariadb.jdbc:mariadb-java-client:2.7.4'
+    }
+
+    extraDirectories {
+        paths {
+            path {
+                from = file('build/generated/swagger-ui')
+                into = "/app/classes"
+            }
+        }
+    }
+
+    pluginExtensions {
+        pluginExtension {
+            implementation = 'com.google.cloud.tools.jib.gradle.extension.layerfilter.JibLayerFilterExtension'
+            configuration {
+                filters {
+                    filter {
+                        glob = '/app/resources/**'
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.jibDockerBuild.dependsOn = ["bootJar"]
+
+// Configuration for git properties gradle plugin
+// https://github.com/n0mer/gradle-git-properties
+gitProperties {
+    gitPropertiesResourceDir = file("$buildDir/classes/java/main")
+    dateFormat = "yyyy-MM-dd'T'HH:mmZ"
+    dateFormatTimeZone = "GMT"
+    failOnNoGitDirectory = false
+}
+
+// make sure the generateGitProperties task always executes (even when git.properties is not changed)
+generateGitProperties.outputs.upToDateWhen { false }
+
+// Gradle 7.x asks for explicit dependencies between tasks
+checkstyleMain.dependsOn resolve
+checkstyleTest.dependsOn resolve
+licenseMain.dependsOn processResources, generateGitProperties
+spotbugsTest.dependsOn resolve
+test.dependsOn resolve
