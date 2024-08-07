@@ -26,9 +26,6 @@ apply plugin: 'com.gorylenko.gradle-git-properties'
 apply plugin: 'io.swagger.core.v3.swagger-gradle-plugin'
 apply plugin: 'com.google.cloud.tools.jib'
 apply plugin: 'org.springframework.boot'
-apply plugin: 'se.thinkcode.cucumber-runner'
-
-check.dependsOn('cucumber')
 
 compileJava.doLast {
     def mainSS = sourceSets.main
@@ -144,16 +141,12 @@ import groovy.sql.Sql
 
 project.ext.mysqlUser='root'
 project.ext.mysqlPassword='mysql'
-project.ext.pgUser='root'
-project.ext.pgPassword='postgres'
 
 configurations {
     driver
 }
 dependencies {
-    driver 'org.mariadb.jdbc:mariadb-java-client'
-    driver 'org.postgresql:postgresql'
-    driver 'mysql:mysql-connector-java:8.0.33'
+    driver 'org.mariadb.jdbc:mariadb-java-client:2.7.4'
 }
 
 URLClassLoader loader = GroovyObject.class.classLoader
@@ -316,18 +309,6 @@ task migrateDatabase {
     }
 }
 
-cucumber {
-    tags = 'not @ignore'
-    main = 'io.cucumber.core.cli.Main'
-    shorten = 'argfile'
-    plugin = [
-        'pretty',
-        'html:build/reports/cucumber/report.html',
-        'json:build/reports/cucumber/report.json',
-        'junit:build/reports/cucumber/report.xml'
-    ]
-}
-
 tasks.jibDockerBuild.dependsOn(bootJar)
 
 // Configuration for git properties gradle plugin
@@ -349,5 +330,4 @@ checkstyleMain.dependsOn resolve
 checkstyleTest.dependsOn resolve
 rat.dependsOn prepareInputYaml
 spotbugsTest.dependsOn resolve
-compileTestJava.dependsOn ':fineract-client:processResources', ':fineract-avro-schemas:processResources'
 resolveMainClassName.dependsOn resolve

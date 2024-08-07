@@ -22,15 +22,12 @@ dependencies {
     //
     tomcat 'org.apache.tomcat:tomcat:10.1.20@zip'
     testImplementation( files("$rootDir/fineract-provider/build/classes/java/main/"),
-            project(path: ':fineract-core', configuration: 'runtimeElements'),
-            project(path: ':fineract-accounting', configuration: 'runtimeElements'),
-            project(path: ':fineract-investor', configuration: 'runtimeElements'),
-            project(path: ':fineract-loan', configuration: 'runtimeElements'),
-            project(path: ':fineract-savings', configuration: 'runtimeElements'),
             project(path: ':fineract-provider', configuration: 'runtimeElements'),
-            project(path: ':fineract-avro-schemas', configuration: 'runtimeElements'),
             project(path: ':fineract-client', configuration: 'runtimeElements'),
-            'com.intuit.karate:karate-junit5',
+            'org.junit.jupiter:junit-jupiter-api',
+            'com.google.truth:truth',
+            'com.google.truth.extensions:truth-java8-extension',
+            'org.awaitility:awaitility',
             // 'com.google.code.gson:gson',
             )
     testImplementation ('org.mock-server:mockserver-junit-jupiter') {

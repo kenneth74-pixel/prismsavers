@@ -62,6 +62,9 @@ buildscript {
         npmRepository = 'https://npm.pkg.github.com'
     }
     repositories {
+        mavenCentral()
+        jcenter()
+        maven { url "https://repo.spring.io/release" }
         maven { url 'https://plugins.gradle.org/m2/' }
     }
 
@@ -77,11 +80,11 @@ buildscript {
 }
 
 plugins {
-    id 'me.qoomon.git-versioning' version '6.4.3'
-    id "org.barfuin.gradle.taskinfo" version "2.2.0"
-    id 'com.adarshr.test-logger' version '4.0.0'
-    id 'com.diffplug.spotless' version '6.25.0' apply false
-    id 'org.nosphere.apache.rat' version '0.8.1' apply false
+    id 'io.spring.dependency-management' version '1.0.11.RELEASE'
+    id "org.barfuin.gradle.taskinfo" version "1.3.1"
+    id 'com.adarshr.test-logger' version '3.1.0'
+    id 'com.diffplug.spotless' version '6.0.0' apply false
+    id 'org.nosphere.apache.rat' version '0.7.0' apply false
     id 'com.github.hierynomus.license' version '0.16.1' apply false
     id 'com.github.jk1.dependency-license-report' version '2.5' apply false
     id 'org.zeroturnaround.gradle.jrebel' version '1.2.0' apply false
@@ -92,44 +95,21 @@ plugins {
     id 'org.asciidoctor.jvm.convert' version '3.3.2' apply false
     id 'org.asciidoctor.jvm.pdf' version '3.3.2' apply false
     id 'org.asciidoctor.jvm.epub' version '3.3.2' apply false
-    id 'org.asciidoctor.jvm.revealjs' version '3.3.2' apply false
-    id 'org.asciidoctor.jvm.gems' version '3.3.2' apply false
+//    id 'org.asciidoctor.jvm.revealjs' version '3.3.2' apply false
+//    id 'org.asciidoctor.jvm.gems' version '3.3.2' apply false
     id 'org.asciidoctor.kindlegen.base' version '3.2.0' apply false
     id 'com.google.cloud.tools.jib' version '3.4.0' apply false
-    id 'org.sonarqube' version '4.4.1.3373'
-    id 'com.github.andygoossens.modernizer' version '1.9.0' apply false
+    id 'org.sonarqube' version '3.3'
+    id 'com.github.andygoossens.modernizer' version '1.6.1' apply false
     // TODO: upgrade to 6.0.4
-    id 'com.github.spotbugs' version '5.2.5' apply false
-    id 'se.thinkcode.cucumber-runner' version '0.0.11' apply false
-    id "com.github.davidmc24.gradle.plugin.avro-base" version "1.9.1" apply false
-    id 'org.openapi.generator' version '7.2.0' apply false
+    id 'com.github.spotbugs' version '5.0.3' apply false
+//    id 'se.thinkcode.cucumber-runner' version '0.0.11' apply false
+//    id "com.github.davidmc24.gradle.plugin.avro-base" version "1.9.1" apply false
+    id 'org.openapi.generator' version '4.3.1' apply false
 }
-
-apply from: "${rootDir}/buildSrc/src/main/groovy/org.apache.fineract.release.gradle"
-
 description = '''\
 Run as:
 gradle clean bootRun'''
-
-version = '0.0.0-SNAPSHOT'
-
-gitVersioning.apply {
-    refs {
-        considerTagsOnBranches = true
-        describeTagPattern = '.*(\\d+\\.\\d+\\.\\d+).*'
-        describeTagFirstParent = false
-
-        branch("release\\/\\d+\\.\\d+\\.\\d+") {
-            version = '${describe.tag.version.major}.${describe.tag.version.minor}.${describe.tag.version.patch}'
-        }
-        branch("maintenance\\/\\d+\\.\\d+") {
-            version = '${describe.tag.version.major}.${describe.tag.version.minor}.${describe.tag.version.patch}'
-        }
-    }
-    rev {
-        version = '${describe.tag.version.major}.${describe.tag.version.minor.next}.${describe.tag.version.patch}-SNAPSHOT'
-    }
-}
 
 ext['groovy.version'] = '4.0.17'
 ext['swaggerFile'] = "$rootDir/fineract-provider/build/classes/java/main/static/fineract.json".toString()
@@ -139,6 +119,9 @@ allprojects  {
 
     repositories {
         mavenCentral()
+        maven {
+            url "https://repo.orl.eng.hitachivantara.com/artifactory/pnt-mvn/"
+        }
     }
 
     apply plugin: 'com.adarshr.test-logger'
@@ -294,22 +277,6 @@ allprojects  {
     }
 }
 
-// NOTE: dynamically load all custom modules
-file("${rootDir}/custom").eachDir { companyDir ->
-    if('build' != companyDir.name && 'docker' != companyDir.name) {
-        file("${rootDir}/custom/${companyDir.name}").eachDir { categoryDir ->
-            if('build' != categoryDir.name) {
-                file("${rootDir}/custom/${companyDir.name}/${categoryDir.name}").eachDir { moduleDir ->
-                    if('build' != moduleDir.name) {
-                        project.fineractJavaProjects.add(project(":custom:${companyDir.name}:${categoryDir.name}:${moduleDir.name}"))
-                        project.fineractCustomProjects.add(project(":custom:${companyDir.name}:${categoryDir.name}:${moduleDir.name}"))
-                    }
-                }
-            }
-        }
-    }
-}
-
 configure(project.fineractJavaProjects) {
     // NOTE: order matters!
 
@@ -321,7 +288,6 @@ configure(project.fineractJavaProjects) {
     apply plugin: 'net.ltgt.errorprone'
     apply plugin: 'com.github.spotbugs'
     apply plugin: 'com.github.andygoossens.modernizer'
-    apply from: "${rootDir}/buildSrc/src/main/groovy/org.apache.fineract.dependencies.gradle"
 
     group = 'org.apache.fineract'
 
@@ -472,7 +438,6 @@ configure(project.fineractJavaProjects) {
 
     tasks.withType(JavaCompile) {
         options.errorprone {
-            enabled = project.gradle.startParameter.taskNames.contains('build') || project.gradle.startParameter.taskNames.contains('check')
             disableWarningsInGeneratedCode = true
             excludedPaths = ".*/build/.*"
             disable(
@@ -486,13 +451,8 @@ configure(project.fineractJavaProjects) {
                     "AlmostJavadoc",
                     "InvalidBlockTag",
                     "JavaUtilDate", // TODO FINERACT-1298
-                    "ReturnValueIgnored",
-                    "DirectInvocationOnMock",
-                    "CanIgnoreReturnValueSuggester",
-                    "SameNameButDifferent", // Until errorprone recognizes Lombok
-                    "MultiVariableDeclaration", // Until errorprone recognizes Lombok
-                    "UnnecessaryDefaultInEnumSwitch" // FINERACT-1911
-                    )
+                    "ReturnValueIgnored"
+            )
             error(
                     "DefaultCharset",
                     "RemoveUnusedImports",
@@ -502,6 +462,7 @@ configure(project.fineractJavaProjects) {
                     "UnnecessaryParentheses",
                     "MultipleTopLevelClasses",
                     "MixedMutabilityReturnType",
+                    "MultiVariableDeclaration",
                     "AssertEqualsArgumentOrderChecker",
                     "EmptySetMultibindingContributions",
                     "BigDecimalEquals",
@@ -515,6 +476,7 @@ configure(project.fineractJavaProjects) {
                     "StreamResourceLeak",
                     "TruthIncompatibleType",
                     "ByteBufferBackingArray",
+                    "SameNameButDifferent",
                     "OrphanedFormatString",
                     "CatchAndPrintStackTrace",
                     "ObjectToString",
@@ -533,6 +495,7 @@ configure(project.fineractJavaProjects) {
                     "UnsafeFinalization",
                     "JavaTimeDefaultTimeZone",
                     "JodaPlusMinusLong",
+                    "MutableMethodReturnType",
                     "SwitchDefault",
                     "VarTypeName",
                     "ArgumentSelectionDefectChecker",
@@ -543,6 +506,7 @@ configure(project.fineractJavaProjects) {
                     "MissingCasesInEnumSwitch",
                     "ReferenceEquality",
                     "UndefinedEquals",
+                    "PublicConstructorForAbstractClass",
                     "UnescapedEntity",
                     "ModifyCollectionInEnhancedForLoop",
                     "NonCanonicalType",
@@ -554,6 +518,7 @@ configure(project.fineractJavaProjects) {
                     "EqualsGetClass",
                     "EqualsUnsafeCast",
                     "DoubleBraceInitialization",
+                    "UnnecessaryDefaultInEnumSwitch",
                     "UnusedNestedClass",
                     "UnusedMethod",
                     "ModifiedButNotUsed",
@@ -567,40 +532,12 @@ configure(project.fineractJavaProjects) {
                     // "ConstantField",
                     // "UnnecessaryDefaultInEnumSwitch",
                     // "FieldCanBeFinal"
-                    )
+            )
         }
     }
 
     check {
         dependsOn(rat, licenseMain, licenseTest)
-    }
-
-    dependencies {
-        implementation (
-                'ch.qos.logback:logback-core',
-                'org.slf4j:slf4j-api',
-                'org.slf4j:log4j-over-slf4j',
-                'org.slf4j:jul-to-slf4j',
-                )
-        implementation ("ch.qos.logback:logback-classic") {
-            exclude(module: "slf4j-api")
-        }
-
-        compileOnly 'org.projectlombok:lombok'
-        annotationProcessor 'org.projectlombok:lombok'
-
-        testImplementation( 'org.mockito:mockito-core',
-                'org.mockito:mockito-junit-jupiter',
-                'org.junit.jupiter:junit-jupiter-api',
-                'org.junit.jupiter:junit-jupiter-engine',
-                'org.junit.jupiter:junit-jupiter-params',
-                'org.junit.platform:junit-platform-runner', // required to be able to run tests directly under Eclipse, see FINERACT-943 & FINERACT-1021
-                'org.bouncycastle:bcpkix-jdk15to18',
-                'org.bouncycastle:bcprov-jdk15to18',
-                'org.awaitility:awaitility',
-                'com.google.truth:truth',
-                'com.google.truth.extensions:truth-java8-extension'
-                )
     }
 
     test {
@@ -656,63 +593,6 @@ configure(project.fineractJavaProjects) {
         exclusions = [
             'java/util/Optional.get:()Ljava/lang/Object;' // Disable forcing the usage of Optional.orElseThrow(java.util.function.Supplier<? extends X>)
         ]
-    }
-}
-
-configure(project.fineractCustomProjects) {
-    compileJava {
-        dependsOn = []
-    }
-
-    dependencies {
-        implementation (
-                'org.springframework:spring-context',
-                'ch.qos.logback:logback-core',
-                'org.slf4j:slf4j-api',
-                'org.slf4j:log4j-over-slf4j',
-                'org.slf4j:jul-to-slf4j',
-                )
-        implementation ("ch.qos.logback:logback-classic") {
-            exclude(module: "slf4j-api")
-        }
-
-        compileOnly('org.projectlombok:lombok')
-        annotationProcessor('org.projectlombok:lombok')
-        annotationProcessor('org.mapstruct:mapstruct-processor')
-        annotationProcessor('org.springframework.boot:spring-boot-autoconfigure-processor')
-        annotationProcessor('org.springframework.boot:spring-boot-configuration-processor')
-
-        testImplementation ('org.springframework.boot:spring-boot-starter-test') {
-            exclude group: 'com.jayway.jsonpath', module: 'json-path'
-            exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
-            exclude group: 'jakarta.activation'
-            exclude group: 'javax.activation'
-            exclude group: 'org.skyscreamer'
-        }
-        testImplementation( 'org.mockito:mockito-core',
-                'org.mockito:mockito-inline',
-                'org.mockito:mockito-junit-jupiter',
-                'org.junit.jupiter:junit-jupiter-api',
-                'org.junit.jupiter:junit-jupiter-engine',
-                'org.junit.platform:junit-platform-runner', // required to be able to run tests directly under Eclipse, see FINERACT-943 & FINERACT-1021
-                'org.bouncycastle:bcpkix-jdk15to18',
-                'org.bouncycastle:bcprov-jdk15to18',
-                'org.awaitility:awaitility',
-                'com.google.truth:truth',
-                'com.google.truth.extensions:truth-java8-extension',
-                'io.github.classgraph:classgraph',
-                'io.cucumber:cucumber-core',
-                'io.cucumber:cucumber-java',
-                'io.cucumber:cucumber-java8',
-                'io.cucumber:cucumber-junit-platform-engine',
-                'io.cucumber:cucumber-spring',
-                )
-
-        testCompileOnly('org.projectlombok:lombok')
-        testAnnotationProcessor('org.projectlombok:lombok')
-        testAnnotationProcessor('org.mapstruct:mapstruct-processor')
-        testAnnotationProcessor('org.springframework.boot:spring-boot-autoconfigure-processor')
-        testAnnotationProcessor('org.springframework.boot:spring-boot-configuration-processor')
     }
 }
 

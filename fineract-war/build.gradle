@@ -20,7 +20,6 @@ description = 'Fineract WAR'
 
 apply plugin: 'war'
 apply plugin: 'distribution'
-apply from: "${rootDir}/buildSrc/src/main/groovy/org.apache.fineract.dependencies.gradle"
 
 war {
     archiveFileName = 'fineract-provider.war'
@@ -48,10 +47,6 @@ war {
 }
 
 dependencies {
-    implementation project(':fineract-core')
-    implementation project(':fineract-accounting')
-    implementation project(':fineract-investor')
-    implementation project(':fineract-loan')
     implementation project(':fineract-provider')
 }
 
@@ -66,9 +61,6 @@ distributions {
         contents {
             from ("$rootDir/fineract-client/build/libs/") {
                 include 'fineract-client-*.jar'
-            }
-            from ("$rootDir/fineract-avro-schemas/build/libs/") {
-                include 'fineract-avro-schemas-*.jar'
             }
             from ("$rootDir/fineract-provider/build/libs/") {
                 include 'fineract-provider-*.jar'
@@ -85,16 +77,18 @@ distributions {
 
             from "$rootDir/DISCLAIMER"
             from "$rootDir/README.md"
-
-            from "$rootDir/fineract-doc/build/docs/pdf/en/index.pdf"
-            rename ('index.pdf', 'fineract-documentation.pdf')
         }
     }
     src {
-        distributionBaseName = 'apache-fineract-src'
+        if(project.hasProperty("distVersion")) {
+            distributionBaseName = "apache-fineract-$distVersion-src"
+        } else {
+            distributionBaseName = "apache-fineract-src"
+        }
+
         contents {
             from "$rootDir/"
-            exclude '**/build' , '.git', '**/.gradle', '.github', '**/.settings', '**/.project', '**/.classpath', '.idea', 'out', '._.DS_Store', '.DS_Store', 'WebContent', '**/.externalToolbuilders', '.theia', '.gitpod.yml', 'LICENSE_RELEASE', 'NOTICE_RELEASE', '**/licenses', '*.class', '**/bin', '*.log', '.dockerignore', '**/.gitkeep'
+            exclude '**/build' , '.git', '**/.gradle', '.github', '**/.settings', '**/.project', '**/.classpath', '.idea', 'out', '._.DS_Store', '.DS_Store', 'WebContent', '**/.externalToolbuilders', '.theia', '.gitpod.yml', '.travis.yml', 'LICENSE_RELEASE', 'NOTICE_RELEASE', '**/licenses', '*.class', '**/bin', '*.log', '.dockerignore', '**/gradle', '**/.gitkeep'
             rename ('LICENSE_SOURCE', 'LICENSE')
             rename ('NOTICE_SOURCE', 'NOTICE')
         }
@@ -107,5 +101,6 @@ distributions {
 
 binaryDistZip.enabled false
 srcDistZip.enabled false
+tasks.binaryDistTar.dependsOn war
 // NOTE: Gradle suggested these dependencies
-binaryDistTar.dependsOn(war, ':fineract-client:jar', ':fineract-avro-schemas:jar', ':fineract-provider:build', ':fineract-doc:doc')
+//binaryDistTar.dependsOn(war, ':fineract-client:jar', ':fineract-avro-schemas:jar', ':fineract-provider:build', ':fineract-doc:doc')
